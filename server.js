@@ -3,7 +3,8 @@ const fs = require('fs');
 const path = require('path');
 const { ChatOpenAI } = require("langchain/chat_models/openai");
 const { HumanMessage, SystemMessage } = require("langchain/schema");
-require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+
+require('dotenv').config(); // loads from .env
 
 const app = express();
 app.use(express.static('public'));
@@ -21,19 +22,28 @@ try {
   console.error('Error loading character data:', error);
   process.exit(1);
 }
+console.log("Loaded API Key:", process.env.OPENAI_API_KEY);
 
-// Initialize OpenAI chat model
+// Initialize OpenAI chat model with streaming capability
 const model = new ChatOpenAI({
   modelName: "gpt-3.5-turbo",
   streaming: true,
-  openAIApiKey: process.env.OPENAI_API_KEY
+  callbacks: [
+    {
+      handleLLMNewToken(token) {
+        console.log({ token });
+      },
+    },
+  ],
+  openAIApiKey: process.env.OPENAI_API_KEY,
+  temperature: 0.7
 });
 
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Endpoint to get character name (for bonus challenge)
+// Endpoint to get character name
 app.get('/character-info', (req, res) => {
   res.json({ name: characterData.name });
 });
@@ -45,7 +55,7 @@ app.get('/chat', async (req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
 
-  // Send character name as initial SSE message for bonus challenge
+  // Send character name as initial SSE message
   res.write(`data: ${JSON.stringify({ type: 'character-info', name: characterData.name })}\n\n`);
 
   // Get user message from query params
@@ -80,23 +90,34 @@ In specific situations, respond like this:
 - When explaining your research methods: "${characterData.situational_responses.explaining_research_methods}"
 - When discussing cosmic phenomena: "${characterData.situational_responses.discussing_cosmic_phenomena}"
 
-Always stay in character and respond as Captain Nova Starlight would. Draw from your background, experiences, and knowledge areas when answering questions. Use your specific communication style in all responses.`;
+Always stay in character and respond as ${characterData.name} would. Draw from your background, experiences, and knowledge areas when answering questions. Use your specific communication style in all responses.`;
 
-    // Create message objects
+    // Create LangChain message objects
     const messages = [
       new SystemMessage(characterSystemPrompt),
       new HumanMessage(userMessage)
     ];
 
-    // Use streaming for the response
-    const stream = await model.stream(messages);
+    // Set up custom callback handler for streaming
+    let responseText = '';
+    
+    const chat = new ChatOpenAI({
+      modelName: "gpt-3.5-turbo",
+      streaming: true,
+      callbacks: [
+        {
+          handleLLMNewToken(token) {
+            responseText += token;
+            res.write(`data: ${JSON.stringify({ type: 'chunk', content: token })}\n\n`);
+          },
+        },
+      ],
+      openAIApiKey: process.env.OPENAI_API_KEY,
+      temperature: 0.7
+    });
 
-    // Process and send each chunk as it arrives
-    for await (const chunk of stream) {
-      if (chunk.content) {
-        res.write(`data: ${JSON.stringify({ type: 'chunk', content: chunk.content })}\n\n`);
-      }
-    }
+    // Call the model with streaming
+    await chat.call(messages);
 
     // Signal the end of the stream
     res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
