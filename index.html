@@ -1,0 +1,288 @@
+<!-- index.html -->
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Simple WebSocket Chat</title>
+    <style>
+        body {
+            margin: 0;
+            padding-bottom: 3rem;
+            font-family: sans-serif;
+        }
+
+        #form {
+            background: rgba(0, 0, 0, 0.15);
+            padding: 0.25rem;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            display: flex;
+            height: 3rem;
+            box-sizing: border-box;
+            backdrop-filter: blur(10px);
+        }
+
+        #input {
+            border: none;
+            padding: 0 1rem;
+            flex-grow: 1;
+            border-radius: 2rem;
+            margin: 0.25rem;
+        }
+
+        #input:focus {
+            outline: none;
+        }
+
+        #form>button {
+            background: #333;
+            border: none;
+            padding: 0 1rem;
+            margin: 0.25rem;
+            border-radius: 3px;
+            outline: none;
+            color: #fff;
+        }
+
+        #messages {
+            list-style-type: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        #messages>li {
+            padding: 0.5rem 1rem;
+        }
+
+        #messages>li:nth-child(odd) {
+            background: #efefef;
+        }
+
+        #typing-indicator {
+            color: #666;
+            font-style: italic;
+            padding: 0 1rem;
+        }
+
+        .main-container {
+            display: flex;
+            height: calc(100vh - 3rem);
+        }
+
+        .chat-container {
+            flex: 1;
+            overflow-y: auto;
+            padding-bottom: 40px;
+        }
+
+        .user-list-container {
+            width: 200px;
+            background-color: #f7f7f7;
+            border-left: 1px solid #ddd;
+            padding: 10px;
+            overflow-y: auto;
+        }
+
+        .user-list-container h3 {
+            margin-top: 0;
+            padding-bottom: 5px;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .username {
+            font-weight: bold;
+            margin-right: 5px;
+        }
+
+        .message-text {
+            word-break: break-word;
+        }
+
+        .username-form {
+            margin-bottom: 10px;
+            padding: 10px;
+            background: #efefef;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .username-form button {
+            margin-top: 5px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="main-container">
+        <div class="chat-container">
+            <div class="username-form">
+                <input id="username-input" placeholder="Enter your username" />
+                <button id="set-username">Set Username</button>
+            </div>
+            <ul id="messages"></ul>
+            <div id="typing-indicator"></div>
+        </div>
+        <div class="user-list-container">
+            <h3>Online Users</h3>
+            <ul id="users"></ul>
+        </div>
+    </div>
+    <form id="form" action="">
+        <input id="input" autocomplete="off" /><button>Send</button>
+    </form>
+
+    <!-- Include the Socket.IO client library -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        // Connect to the Socket.IO server (defaults to the server that served this page)
+        const socket = io();
+
+        // Get references to the HTML elements
+        const form = document.getElementById('form');
+        const input = document.getElementById('input');
+        const messages = document.getElementById('messages');
+        const typingIndicator = document.getElementById('typing-indicator');
+        const usersList = document.getElementById('users');
+        const usernameInput = document.getElementById('username-input');
+        const setUsernameBtn = document.getElementById('set-username');
+
+        // Variable to track typing status
+        let typing = false;
+        let typingTimeout = null;
+        const TYPING_TIMEOUT = 2000; // 2 seconds
+
+        // Store the currently typing users
+        const typingUsers = {};
+
+        // Function to update the typing indicator
+        function updateTypingIndicator() {
+            const typers = Object.values(typingUsers);
+            if (typers.length === 0) {
+                typingIndicator.textContent = '';
+            } else if (typers.length === 1) {
+                typingIndicator.textContent = `${typers[0]} is typing...`;
+            } else if (typers.length === 2) {
+                typingIndicator.textContent = `${typers[0]} and ${typers[1]} are typing...`;
+            } else {
+                typingIndicator.textContent = 'Multiple users are typing...';
+            }
+        }
+
+        // --- Set Username ---
+        setUsernameBtn.addEventListener('click', function (event) {
+            event.preventDefault();
+            if (usernameInput.value.trim()) {
+                socket.emit('set username', usernameInput.value.trim());
+                usernameInput.value = '';
+            }
+        });
+
+        // --- Sending Messages ---
+        // Add an event listener for when the form is submitted
+        form.addEventListener('submit', function (event) {
+            event.preventDefault(); // Prevent the default form submission (page reload)
+            if (input.value) { // Check if the input field is not empty
+                // Emit a 'chat message' event to the server with the input value
+                socket.emit('chat message', input.value);
+                input.value = ''; // Clear the input field
+
+                // Stop typing when message is sent
+                stopTyping();
+            }
+        });
+
+        // --- Input Typing Detection ---
+        input.addEventListener('input', function () {
+            if (!typing) {
+                typing = true;
+                socket.emit('typing');
+            }
+
+            // Reset the typing timeout
+            clearTimeout(typingTimeout);
+            typingTimeout = setTimeout(stopTyping, TYPING_TIMEOUT);
+        });
+
+        // When input is cleared or blurred
+        input.addEventListener('blur', stopTyping);
+
+        function stopTyping() {
+            if (typing) {
+                typing = false;
+                socket.emit('stop typing');
+                clearTimeout(typingTimeout);
+            }
+        }
+
+        // --- Receiving Events ---
+        // Listen for 'chat message' events coming FROM the server
+        socket.on('chat message', function (data) {
+            const item = document.createElement('li'); // Create a new list item element
+
+            // Add username and message
+            const usernameSpan = document.createElement('span');
+            usernameSpan.className = 'username';
+            usernameSpan.textContent = data.username + ':';
+
+            const messageSpan = document.createElement('span');
+            messageSpan.className = 'message-text';
+            messageSpan.textContent = ' ' + data.msg;
+
+            item.appendChild(usernameSpan);
+            item.appendChild(messageSpan);
+
+            messages.appendChild(item); // Add the list item to the messages list
+            window.scrollTo(0, document.body.scrollHeight); // Scroll to the bottom
+
+            // Remove from typing users if this user was typing
+            if (typingUsers[data.userId]) {
+                delete typingUsers[data.userId];
+                updateTypingIndicator();
+            }
+        });
+
+        // Listen for 'user typing' events
+        socket.on('user typing', function (data) {
+            typingUsers[data.userId] = data.username;
+            updateTypingIndicator();
+        });
+
+        // Listen for 'user stopped typing' events
+        socket.on('user stopped typing', function (data) {
+            delete typingUsers[data.userId];
+            updateTypingIndicator();
+        });
+
+        // Listen for user list updates
+        socket.on('user list', function (users) {
+            usersList.innerHTML = '';
+            users.forEach(user => {
+                const userItem = document.createElement('li');
+                userItem.textContent = user.username;
+
+                // Highlight current user
+                if (user.id === socket.id) {
+                    userItem.style.fontWeight = 'bold';
+                    userItem.textContent += ' (you)';
+                }
+
+                usersList.appendChild(userItem);
+            });
+        });
+
+        // --- Optional: Listen for connect/disconnect events on client ---
+        socket.on('connect', () => {
+            console.log('✅ Connected to server:', socket.id);
+        });
+
+        socket.on('disconnect', () => {
+            console.log('❌ Disconnected from server');
+            // Clear typing indicators when disconnected
+            typingIndicator.textContent = '';
+        });
+    </script>
+</body>
+
+</html>
