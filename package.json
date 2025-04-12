@@ -1,0 +1,24 @@
+{
+  "name": "rag-assignment-is219",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mizm13/Rag-Assignment-IS219.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/mizm13/Rag-Assignment-IS219/issues"
+  },
+  "homepage": "https://github.com/mizm13/Rag-Assignment-IS219#readme",
+  "dependencies": {
+    "express": "^5.1.0",
+    "socket.io": "^4.8.1"
+  }
+}
