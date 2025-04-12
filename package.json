@@ -18,7 +18,10 @@
   },
   "homepage": "https://github.com/mizm13/Rag-Assignment-IS219#readme",
   "dependencies": {
+    "@langchain/openai": "^0.5.5",
+    "dotenv": "^16.5.0",
     "express": "^5.1.0",
+    "langchain": "^0.3.21",
     "socket.io": "^4.8.1"
   }
 }
